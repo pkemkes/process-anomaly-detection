@@ -5,6 +5,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+.pytest_cache/
 
 # Virtual environments
 .venv/
@@ -20,3 +21,6 @@ Thumbs.db
 # Outputs
 *.json
 *.ndjson
+
+# Model artifacts
+*.joblib
