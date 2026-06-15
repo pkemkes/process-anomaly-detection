@@ -16,8 +16,8 @@ import time
 from typing import TextIO
 
 from .render import render_frame
-from .store import ProcessStore
-from .terminal import Screen
+from .store import ProcessStore, SORT_SCORE, SORT_TIME
+from .terminal import KeyReader, Screen
 
 
 def _reconfigure_utf8(stream: TextIO) -> None:
@@ -72,14 +72,24 @@ def run(refresh: float = 0.5) -> int:
     started = time.monotonic()
 
     try:
-        with Screen() as screen:
+        with Screen() as screen, KeyReader() as keys:
             while True:
+                for ch in keys.poll():
+                    lower = ch.lower()
+                    if lower == "s":
+                        store.set_sort(SORT_SCORE)
+                    elif lower == "t":
+                        store.set_sort(SORT_TIME)
+                    elif lower in (" ", "\t"):
+                        store.toggle_sort()
                 size = shutil.get_terminal_size((80, 24))
                 with lock:
                     snapshot = store.snapshot()
                     counts = store.counts()
+                    sort_mode = store.sort_mode
                 frame = render_frame(
-                    snapshot, counts, size.columns, size.lines, reader.eof, started
+                    snapshot, counts, size.columns, size.lines, reader.eof, started,
+                    sort_mode,
                 )
                 screen.render(frame)
                 time.sleep(refresh)

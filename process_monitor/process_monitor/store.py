@@ -11,6 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+# Sort modes the display can cycle through.
+SORT_SCORE = "score"
+SORT_TIME = "time"
+SORT_MODES = (SORT_SCORE, SORT_TIME)
+
 
 @dataclass
 class Process:
@@ -24,6 +29,7 @@ class Process:
     rank_hint: str
     top_fields: List[str]
     seq: int  # arrival order, used as a recency tie-breaker
+    start_time: str  # process create_time (ISO 8601), used for time ordering
 
 
 def _basename(path: Optional[str]) -> str:
@@ -49,9 +55,26 @@ def _identity(record: dict) -> str:
 class ProcessStore:
     """Holds the current set of live, scored processes."""
 
-    def __init__(self) -> None:
+    def __init__(self, sort_mode: str = SORT_SCORE) -> None:
         self._procs: Dict[str, Process] = {}
         self._counter = 0
+        self._sort_mode = sort_mode if sort_mode in SORT_MODES else SORT_SCORE
+
+    @property
+    def sort_mode(self) -> str:
+        """The active ordering for :meth:`snapshot` (``score`` or ``time``)."""
+        return self._sort_mode
+
+    def set_sort(self, mode: str) -> None:
+        """Set the ordering; unknown modes are ignored."""
+        if mode in SORT_MODES:
+            self._sort_mode = mode
+
+    def toggle_sort(self) -> str:
+        """Switch to the next sort mode and return it."""
+        nxt = SORT_MODES[(SORT_MODES.index(self._sort_mode) + 1) % len(SORT_MODES)]
+        self._sort_mode = nxt
+        return nxt
 
     def update(self, record: dict) -> None:
         """Fold one scored NDJSON record into the table.
@@ -81,10 +104,22 @@ class ProcessStore:
             rank_hint=record.get("anomaly_rank_hint") or "low",
             top_fields=list(record.get("top_contributing_fields") or []),
             seq=self._counter,
+            start_time=str(record.get("create_time") or ""),
         )
 
     def snapshot(self) -> List[Process]:
-        """Processes ordered most-suspicious first (newest breaks ties)."""
+        """Processes ordered by the active sort mode.
+
+        ``score`` ranks most-suspicious first; ``time`` ranks most-recently
+        started first (by the process ``create_time``). In both cases arrival
+        order (``seq``) breaks ties.
+        """
+        if self._sort_mode == SORT_TIME:
+            return sorted(
+                self._procs.values(),
+                key=lambda p: (p.start_time, p.seq),
+                reverse=True,
+            )
         return sorted(self._procs.values(), key=lambda p: (-p.score, -p.seq))
 
     def counts(self) -> Tuple[int, int, int]:

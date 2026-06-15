@@ -22,7 +22,7 @@ from __future__ import annotations
 import time
 from typing import List, Sequence, Tuple
 
-from .store import Process
+from .store import Process, SORT_TIME
 
 # --- SGR colour codes --------------------------------------------------------
 _RESET = "\x1b[0m"
@@ -127,6 +127,7 @@ def render_frame(
     height: int,
     eof: bool,
     started: float,
+    sort_mode: str = "score",
 ) -> List[str]:
     """Build exactly ``height`` lines describing the current monitor state."""
     width = max(width, 20)
@@ -152,7 +153,11 @@ def render_frame(
 
     # --- footer ---
     if total:
-        footer = f" showing {len(shown)} of {total}   most suspicious at top "
+        order = "newest first" if sort_mode == SORT_TIME else "most suspicious at top"
+        footer = (
+            f" showing {len(shown)} of {total}   sort: {sort_mode} ({order})"
+            "   [s]core [t]ime "
+        )
     else:
         footer = (
             " waiting for scored processes\u2026  "

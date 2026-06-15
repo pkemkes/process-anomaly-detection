@@ -19,6 +19,14 @@ python -m process_stream | python -m model score --model model.joblib | python -
 
 Press `Ctrl+C` to quit; your terminal scrollback is restored on exit.
 
+### Hotkeys
+
+| Key | Action |
+|-----|--------|
+| `s` | Sort by anomaly score (most suspicious first). |
+| `t` | Sort by timestamp (most recent first). |
+| `Space` / `Tab` | Toggle between sort modes. |
+
 ### Options
 
 | Flag | Default | Meaning |
@@ -27,7 +35,8 @@ Press `Ctrl+C` to quit; your terminal scrollback is restored on exit.
 
 ## Display
 
-- **One line per process**, sorted by `anomaly_score` descending.
+- **One line per process**, sorted by `anomaly_score` descending by default
+  (press `t` to sort by timestamp instead).
 - Rows are coloured by `anomaly_rank_hint`: **red** = high, **yellow** = medium,
   **green** = low.
 - Columns: score, PID, image name, user, and the top contributing field.
