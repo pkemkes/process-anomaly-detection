@@ -11,9 +11,11 @@
 #
 #   process_stream/            -> collector  (package: process_stream)
 #   anomaly_detection_model/   -> model      (package: model)
+#   process_monitor/           -> monitor    (package: process_monitor, stdlib only)
 #
-# They share no code and no runtime dependencies. Install both as editable
-# packages from the repo root (see README) to run them with `python -m ...`.
+# They share no code and no runtime dependencies. Install the ones you need as
+# editable packages from the repo root (see README) to run them with
+# `python -m ...`.
 
 [project]
 name = "process-anomaly-detection"
