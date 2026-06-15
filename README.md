@@ -46,12 +46,35 @@ Windows host                          Any system
 3. **Alerting / review** *(planned)* — surface the highest-scoring events for
    triage.
 
+## Repository layout
+
+The repo is a small **workspace** over two self-contained subprojects. The root
+`pyproject.toml` builds no code — it only carries shared dev tooling and the
+`pytest` / `ruff` configuration so you can work from the root. Each subproject
+declares its own runtime dependencies and can be built, installed, and shipped on
+its own.
+
+```
+process-anomaly-detection/
+├── pyproject.toml              # workspace root: dev tooling + shared tool config (no runtime code)
+├── process_stream/             # Collector subproject
+│   ├── pyproject.toml          #   its own dependencies (single source of truth)
+│   └── process_stream/         #   importable package  → python -m process_stream
+└── anomaly_detection_model/    # Model subproject
+    ├── pyproject.toml          #   its own dependencies (single source of truth)
+    └── model/                  #   importable package  → python -m model
+```
+
 ## Quick start
+
+Each subproject is installed separately, so the two modules never share an
+environment requirement. To run them with `python -m ...` from the repo root,
+install whichever one(s) you need as editable packages.
 
 ### 1. Collect a baseline (Windows, elevated)
 
 ```powershell
-pip install -r requirements.txt
+pip install -e process_stream          # installs pywintrace, psutil, pywin32
 python -m process_stream > processes.ndjson
 ```
 
@@ -65,30 +88,46 @@ The model is **optional** and runs independently of the collector. You can run i
 on the same machine straight from the repo root, or copy `processes.ndjson` to a
 different system entirely.
 
-Install its dependencies (only `scikit-learn`, `numpy`, `joblib`):
-
 ```bash
-pip install -r anomaly_detection_model/requirements.txt
+pip install -e anomaly_detection_model  # installs scikit-learn, numpy, joblib only
 ```
 
-Then, from the repo root, train and score using the dotted module path:
+Then, from the repo root, train and score:
 
 ```powershell
-python -m anomaly_detection_model.model train --input processes.ndjson --out model.joblib
-python -m anomaly_detection_model.model score --model model.joblib --input new.ndjson
+python -m model train --input processes.ndjson --out model.joblib
+python -m model score --model model.joblib --input new.ndjson
 ```
 
-On a Windows host you can also pipe the live collector straight into the scorer:
+On a Windows host with both installed you can pipe the live collector straight
+into the scorer:
 
 ```powershell
-python -m process_stream | python -m anomaly_detection_model.model score --model model.joblib
+python -m process_stream | python -m model score --model model.joblib
 ```
 
 To run the model as a standalone project on a different system instead, copy the
-`anomaly_detection_model/` directory across and invoke it as `python -m model`
-from inside it. See the
+`anomaly_detection_model/` directory across and invoke it the same way. See the
 [`anomaly_detection_model` README](anomaly_detection_model/README.md) for the
 scoring semantics, output fields, and tuning options.
+
+## Development
+
+From the repo root, install both subprojects editable plus the shared dev tools,
+then run the full test suite in one go:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e process_stream -e anomaly_detection_model   # the two modules (kept isolated)
+pip install -e ".[dev]"                                    # pytest + ruff
+pytest                                                     # discovers both subprojects' tests
+ruff check .
+```
+
+On non-Windows machines the collector's Windows-only dependencies can't install;
+install just the model instead (`pip install -e anomaly_detection_model` and
+`pip install -e ".[dev]"`) — its tests run anywhere.
 
 ## Requirements
 

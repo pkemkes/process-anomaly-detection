@@ -1,20 +1,54 @@
-[project]
-name = "process-stream"
-version = "0.1.0"
-description = "Lightweight real-time NDJSON stream of Windows process starts for anomaly detection."
-requires-python = ">=3.9"
-dependencies = [
-    "pywintrace>=0.2.0",
-    "psutil>=5.9",
-    "pywin32>=305",
-]
+# Workspace root for process-anomaly-detection.
+#
+# This is intentionally NOT a runtime package. It builds nothing and ships no
+# code. It exists only to:
+#   * carry the shared *development* tooling (pytest, ruff), and
+#   * hold the shared tool configuration so `pytest` / `ruff` can be run once
+#     from the repo root across both subprojects.
+#
+# The two real components live in their own self-contained subprojects, each
+# with its own pyproject.toml and isolated dependencies:
+#
+#   process_stream/            -> collector  (package: process_stream)
+#   anomaly_detection_model/   -> model      (package: model)
+#
+# They share no code and no runtime dependencies. Install both as editable
+# packages from the repo root (see README) to run them with `python -m ...`.
 
-[project.scripts]
-process-stream = "process_stream.__main__:main"
+[project]
+name = "process-anomaly-detection"
+version = "0.1.0"
+description = "Workspace root tying together the process_stream collector and the anomaly_detection_model."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+# Shared development tooling only. The two subprojects' runtime dependencies are
+# declared in their own pyproject.toml files and installed separately (editable).
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
 
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["process_stream"]
+# The root distribution carries no importable code of its own.
+py-modules = []
+
+[tool.pytest.ini_options]
+# Run the whole suite from the repo root. Tests import the installed packages
+# (`model`, `process_stream`), so an editable install of both subprojects is the
+# only prerequisite.
+testpaths = [
+    "anomaly_detection_model/tests",
+    "process_stream/tests",
+]
+
+[tool.ruff]
+# Shared lint/format settings applied across both subprojects.
+target-version = "py39"
+line-length = 100
+extend-exclude = ["*.ndjson"]

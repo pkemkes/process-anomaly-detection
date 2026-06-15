@@ -13,10 +13,16 @@ on Windows. It can be trained and run on any operating system with only
 
 ## Install
 
-From this directory:
+From the repository root, install this subproject as an editable package:
 
 ```bash
-pip install -r requirements.txt
+pip install -e anomaly_detection_model
+```
+
+Or, standalone from this directory (e.g. when copied to another machine):
+
+```bash
+pip install -e .
 ```
 
 The only dependencies are `scikit-learn`, `numpy`, and `joblib` — none of the
@@ -71,10 +77,10 @@ python -m model score --model model.joblib --input new.ndjson
 type new.ndjson | python -m model score --model model.joblib
 ```
 
-> The commands above are run from this directory (`anomaly_detection_model/`),
-> where the package is importable as `model`. To pipe the live collector into the
-> scorer on the same Windows host, run from the **repo root** instead and use the
-> dotted path: `python -m process_stream | python -m anomaly_detection_model.model score --model model.joblib`.
+> Once installed editable (`pip install -e anomaly_detection_model`), the package
+> is importable as `model` from anywhere, including the repo root. To pipe the
+> live collector into the scorer on the same Windows host:
+> `python -m process_stream | python -m model score --model model.joblib`.
 
 | Flag | Description |
 |------|-------------|

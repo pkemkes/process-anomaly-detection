@@ -34,15 +34,16 @@ thread, never in the ETW callback, and file facts are cached per
 
 ## Install
 
-From the repository root:
+From the repository root, install this subproject as an editable package (this
+pulls in `pywintrace`, `psutil`, `pywin32`):
 
 ```powershell
-pip install -r requirements.txt
+pip install -e process_stream
 ```
 
 ## Run
 
-From an **elevated** terminal:
+From an **elevated** terminal, anywhere once installed:
 
 ```powershell
 python -m process_stream
