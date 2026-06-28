@@ -11,4 +11,4 @@ See :mod:`__main__` for the ``train`` / ``score`` command-line interface.
 
 from __future__ import annotations
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "2.0.0"

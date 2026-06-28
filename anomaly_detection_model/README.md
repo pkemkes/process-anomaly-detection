@@ -100,9 +100,9 @@ Each eligible record gains:
   "anomaly_score": 1.83,
   "anomaly_rank_hint": "high",
   "top_contributing_fields": [
-    "pair(parent=winword.exe,image=powershell.exe)",
-    "ran_from_temp=true",
-    "is_signed=false"
+    {"field": "pair(parent=winword.exe,image=powershell.exe)", "contribution_pct": 31.4},
+    {"field": "ran_from_temp=true", "contribution_pct": 18.2},
+    {"field": "is_signed=false", "contribution_pct": 12.7}
   ],
   "model_version": "1.0.0"
 }
@@ -114,6 +114,10 @@ Each eligible record gains:
 - `anomaly_rank_hint`: `low` / `medium` / `high`, derived from training-score
   quantiles (overridable with the `--threshold-*` flags).
 - `top_contributing_fields`: the features that pushed the score up, for triage.
+  Each entry carries a `contribution_pct` -- the share (in percent) of the
+  record's total anomalous deviation attributable to that feature, so you can
+  read at a glance by how much each field drove the score; the list is ordered
+  by that share.
 - Pseudo processes and `process_stop` records pass through with `null` anomaly
   fields.
 

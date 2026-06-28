@@ -9,11 +9,16 @@ and the flicker-free repaint, so this module only decides *what* to show.
 Layout (one line per process, most suspicious at the top)::
 
     PROCESS ANOMALY MONITOR        123 procs  high 4  medium 9  live  Ctrl+C quit
-      SCORE    PID  IMAGE                    USER               DETAIL
-      12.84   8421  powershell.exe           CORP\\alice         pair(parent=...)
-       9.10   2290  rundll32.exe             CORP\\alice         freq_image_name=...
-       ...
-     showing 18 of 123   sort: score (most suspicious at top)
+    SCORE   PID   IMAGE            USER         DETAIL
+    12.84   8421  powershell.exe   CORP\\alice   pair(parent=...) (31%)   is_signed=false (13%)
+    9.10    2290  rundll32.exe     CORP\\alice   freq_image_name=... (24%)
+    ...
+    showing 18 of 123   sort: score (most suspicious at top)
+
+All columns are left-aligned. IMAGE and USER are sized to their content (capped,
+with a little spacing) so they stay only as wide as needed, and the DETAIL column
+absorbs the rest, packing as many top contributing fields (with their percentage
+share) as the terminal width allows so wider windows reveal more context.
 """
 
 from __future__ import annotations
@@ -30,10 +35,58 @@ from .store import Process, SORT_TIME
 # Rank-hint -> row colour (Rich style names).
 _RANK_STYLE = {"high": "bright_red", "medium": "bright_yellow", "low": "bright_green"}
 
-# SCORE and PID are fixed-width; IMAGE, USER and DETAIL are elastic and share
-# the remaining width via Rich column ratios (DETAIL absorbs the remainder).
+# SCORE and PID are fixed-width; IMAGE and USER are sized to their content (so
+# they stay only as wide as needed) and DETAIL absorbs the remaining width.
 _SCORE_W = 7
 _PID_W = 6
+
+# Per-cell right padding (matches the Rich ``padding`` below). IMAGE/USER are
+# sized to their widest cell plus a little breathing room, capped so a single
+# long value cannot starve the DETAIL column.
+_CELL_PAD = 1
+_COL_SPACING = 2
+_IMAGE_CAP = 32
+_USER_CAP = 28
+_DETAIL_MIN_W = 12
+_DETAIL_SEP = "   "
+
+
+def _col_width(values: Sequence[str], header: str, cap: int) -> int:
+    """Width that fits ``header`` and every value, plus spacing, up to ``cap``."""
+    longest = max((len(v) for v in values), default=0)
+    return min(max(longest, len(header)) + _COL_SPACING, cap)
+
+
+def _detail_width(width: int, image_w: int, user_w: int) -> int:
+    """Width left for the DETAIL column once the other columns are placed.
+
+    The fixed SCORE/PID columns, the content-sized IMAGE/USER columns and the
+    per-cell padding are removed; DETAIL takes whatever remains. Governs how many
+    contributing fields we *pack*; Rich still owns the final truncation.
+    """
+    fixed = _SCORE_W + _PID_W + image_w + user_w + 5 * _CELL_PAD
+    return max(width - fixed, _DETAIL_MIN_W)
+
+
+def _detail(fields: Sequence[str], width: int) -> str:
+    """Pack as many contributing fields as fit into ``width`` columns.
+
+    The top field is always shown (Rich ellipsis-truncates it if even that
+    overflows); each further field is appended only when it fits whole, so wider
+    terminals reveal more contributors while narrow ones stay readable.
+    """
+    if not fields:
+        return ""
+    parts = [fields[0]]
+    used = len(fields[0])
+    for field in fields[1:]:
+        extra = len(_DETAIL_SEP) + len(field)
+        if used + extra > width:
+            break
+        parts.append(field)
+        used += extra
+    return _DETAIL_SEP.join(parts)
+
 
 
 def _pad(text: str, width: int) -> str:
@@ -77,7 +130,7 @@ def _title_bar(
     return Text(_pad(bar, width), style="reverse bold")
 
 
-def _build_table() -> Table:
+def _build_table(image_w: int, user_w: int) -> Table:
     table = Table(
         box=None,
         expand=True,
@@ -85,11 +138,13 @@ def _build_table() -> Table:
         padding=(0, 1, 0, 0),
         header_style="dim bold",
     )
-    table.add_column("SCORE", justify="right", width=_SCORE_W, no_wrap=True)
-    table.add_column("PID", justify="right", width=_PID_W, no_wrap=True)
-    table.add_column("IMAGE", ratio=34, min_width=16, no_wrap=True, overflow="ellipsis")
-    table.add_column("USER", ratio=26, min_width=12, no_wrap=True, overflow="ellipsis")
-    table.add_column("DETAIL", ratio=40, min_width=12, no_wrap=True, overflow="ellipsis")
+    table.add_column("SCORE", justify="left", width=_SCORE_W, no_wrap=True)
+    table.add_column("PID", justify="left", width=_PID_W, no_wrap=True)
+    table.add_column("IMAGE", justify="left", width=image_w, no_wrap=True, overflow="ellipsis")
+    table.add_column("USER", justify="left", width=user_w, no_wrap=True, overflow="ellipsis")
+    table.add_column(
+        "DETAIL", justify="left", ratio=1, min_width=_DETAIL_MIN_W, no_wrap=True, overflow="ellipsis"
+    )
     return table
 
 
@@ -107,13 +162,16 @@ def render_frame(
     height = max(height, 5)
     _, _, total = counts
 
-    table = _build_table()
     # Title (1) + table header (1) + footer (1) leaves this many process rows;
     # blank filler rows keep the footer pinned to the bottom of the viewport.
     body_rows = max(height - 3, 1)
     shown = processes[:body_rows]
+    image_w = _col_width([p.image_name for p in shown], "IMAGE", _IMAGE_CAP)
+    user_w = _col_width([p.user for p in shown], "USER", _USER_CAP)
+    table = _build_table(image_w, user_w)
+    detail_width = _detail_width(width, image_w, user_w)
     for proc in shown:
-        detail = proc.top_fields[0] if proc.top_fields else ""
+        detail = _detail(proc.top_fields, detail_width)
         table.add_row(
             f"{proc.score:.2f}",
             str(proc.pid),

@@ -9,7 +9,13 @@ import pytest
 from model.artifact import Artifact, SchemaMismatchError
 from model.score import Scorer, score_stream
 from model.train import train
-from tests.factories import baseline_records, make_record, malicious_record
+from tests.factories import (
+    at_hour,
+    baseline_records,
+    fixed_hour_records,
+    make_record,
+    malicious_record,
+)
 
 
 def _train_baseline():
@@ -27,14 +33,57 @@ def test_synthetic_injection_scores_above_normal():
     assert attack.rank_hint in ("medium", "high")
 
 
+def test_anomaly_score_is_bounded_unit_interval():
+    artifact = _train_baseline()
+    scorer = Scorer(artifact)
+    for record in (make_record(), malicious_record(), baseline_records(4)[0]):
+        score = scorer.score_record(record).anomaly_score
+        assert 0.0 <= score <= 1.0
+
+
+def test_temporal_anomaly_raises_score():
+    # backup.exe always runs at 02:00; the same process at 14:00 is "odd for it".
+    records = baseline_records(40) + fixed_hour_records("backup.exe", 40, hour=2)
+    artifact = train(records, seed=0)
+    scorer = Scorer(artifact)
+
+    usual = make_record(
+        image="C:\\Windows\\System32\\backup.exe", image_name="backup.exe"
+    )
+    normal_hour = scorer.score_record(at_hour(usual, 2)).anomaly_score
+    odd_hour = scorer.score_record(at_hour(usual, 14)).anomaly_score
+    assert odd_hour > normal_hour
+
+
+def test_recurrence_keeps_rare_but_regular_low():
+    # An admin tool that recurs across many windows but is a tiny fraction of the
+    # baseline must still score low (the core requirement of the redesign).
+    records = baseline_records(80) + fixed_hour_records(
+        "admin_tool.exe", 6, hour=3, image="C:\\Windows\\System32\\admin_tool.exe"
+    )
+    artifact = train(records, seed=0)
+    scorer = Scorer(artifact)
+
+    regular = scorer.score_record(
+        make_record(
+            image="C:\\Windows\\System32\\admin_tool.exe", image_name="admin_tool.exe"
+        )
+    )
+    attack = scorer.score_record(malicious_record())
+    assert regular.anomaly_score < attack.anomaly_score
+    assert regular.rank_hint == "low"
+
+
 def test_explanations_name_the_suspicious_features():
     artifact = _train_baseline()
     scorer = Scorer(artifact)
     result = scorer.score_record(malicious_record())
 
-    joined = " ".join(result.top_contributing_fields).lower()
+    joined = " ".join(c.field for c in result.top_contributing_fields).lower()
     assert "powershell.exe" in joined or "winword.exe" in joined
     assert result.top_contributing_fields  # non-empty
+    # Each contributor reports its share (percent) of the anomalous deviation.
+    assert all(0 <= c.contribution_pct <= 100 for c in result.top_contributing_fields)
 
 
 def test_round_trip_preserves_scores(tmp_path):
@@ -58,7 +107,7 @@ def test_determinism_same_seed_same_scores():
     )
 
 
-def test_score_stream_passes_through_pseudo_and_stops():
+def test_score_stream_drops_pseudo_and_stops():
     artifact = _train_baseline()
     lines = [
         json.dumps(make_record()),
@@ -67,11 +116,9 @@ def test_score_stream_passes_through_pseudo_and_stops():
     ]
     out = [json.loads(line) for line in score_stream(lines, artifact)]
 
+    assert len(out) == 1
     assert out[0]["anomaly_score"] is not None
-    assert out[1]["anomaly_score"] is None
-    assert out[2]["anomaly_score"] is None
-    for record in out:
-        assert record["model_version"] == artifact.model_version
+    assert out[0]["model_version"] == artifact.model_version
 
 
 def test_golden_ordering_is_stable():

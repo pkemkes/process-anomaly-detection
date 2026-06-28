@@ -39,6 +39,23 @@ def _basename(path: Optional[str]) -> str:
     return path.replace("/", "\\").rsplit("\\", 1)[-1]
 
 
+def _format_field(entry: object) -> str:
+    """Render one contributing field as a display string.
+
+    ``model score`` emits each contributor as ``{"field": ..., "contribution_pct":
+    ...}`` where ``contribution_pct`` is the share (percent) of the record's total
+    anomalous deviation; the magnitude is appended so the operator can see by how
+    much it drove the score. Plain strings (older streams) pass through.
+    """
+    if isinstance(entry, dict):
+        field = str(entry.get("field", ""))
+        pct = entry.get("contribution_pct")
+        if isinstance(pct, (int, float)):
+            return f"{field} ({pct:.0f}%)"
+        return field
+    return str(entry)
+
+
 def _identity(record: dict) -> str:
     """Stable key for a process across its start/stop records.
 
@@ -102,7 +119,7 @@ class ProcessStore:
             user=record.get("user") or "",
             score=float(score),
             rank_hint=record.get("anomaly_rank_hint") or "low",
-            top_fields=list(record.get("top_contributing_fields") or []),
+            top_fields=[_format_field(f) for f in (record.get("top_contributing_fields") or [])],
             seq=self._counter,
             start_time=str(record.get("create_time") or ""),
         )

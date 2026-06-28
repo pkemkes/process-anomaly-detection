@@ -1,16 +1,17 @@
 """Versioned model artifact: container, persistence, and schema guard.
 
 A single :class:`Artifact` bundles everything needed to score a stream: the
-frozen frequency :class:`~process_stream.model.vocab.Vocabulary`, the fitted
-scaler and Isolation Forest, the per-head normalizer parameters, the score
-thresholds, and the metadata (feature column order, ``alpha``, seed, stream
-``schema_version``, model version) required to reproduce and guard scoring.
+frozen saturating :class:`~model.vocab.Vocabulary`, the fitted scaler and
+Isolation Forest, the scoring configuration, the per-head robust-normalization
+parameters, the combined-score quantile sketch used to map a record to a bounded
+``0..1`` percentile, the percentile thresholds for the rank hint, and the
+metadata required to reproduce and guard scoring.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import joblib
 
@@ -20,6 +21,27 @@ from .vocab import Vocabulary
 
 class SchemaMismatchError(RuntimeError):
     """Raised when a record's ``schema_version`` differs from the trained model."""
+
+
+@dataclass
+class HeadNorm:
+    """Robust per-head normalization: winsor bounds + median/MAD scale.
+
+    A head value is winsorized to ``[lo, hi]`` (the training ``[p0.1, p99.9]``
+    quantiles) then robustly z-scored as ``(x - median) / scale`` where
+    ``scale = max(1.4826 * mad, eps)``. Median/MAD resist the heavy tail a single
+    essentially-never-seen field would otherwise create.
+    """
+
+    lo: float
+    hi: float
+    median: float
+    scale: float
+
+    def normalize(self, value: float) -> float:
+        """Winsorize ``value`` to ``[lo, hi]`` and return its robust z-score."""
+        clipped = min(max(value, self.lo), self.hi)
+        return (clipped - self.median) / self.scale
 
 
 @dataclass
@@ -33,13 +55,22 @@ class Artifact:
     alpha: float
     seed: int
     schema_version: str
-    # Per-head normalization (z-score) parameters fit on the training scores.
-    head_a_mean: float
-    head_a_std: float
-    head_b_mean: float
-    head_b_std: float
-    head_weights: tuple  # (weight_a, weight_b)
-    # Combined-score thresholds (training quantiles) for the rank hint.
+    # Scoring configuration (mirrors the operational params held on the vocab).
+    window_minutes: int
+    saturation_k: int
+    alpha_t: float
+    temporal_min_samples: int
+    hour_buckets: int
+    dow_buckets: int
+    # Per-head robust normalization (Head A identity, Head B forest, Head C time).
+    head_a_norm: HeadNorm
+    head_b_norm: HeadNorm
+    head_c_norm: HeadNorm
+    head_weights: Tuple[float, float, float]  # (weight_a, weight_b, weight_c)
+    # Sorted quantile sketch of the training combined scores; a record's combined
+    # score is mapped through it to an empirical percentile in [0, 1].
+    combined_quantiles: List[float]
+    # Rank-hint cutoffs expressed as percentile levels in [0, 1].
     threshold_medium: float
     threshold_high: float
     model_version: str = MODEL_VERSION

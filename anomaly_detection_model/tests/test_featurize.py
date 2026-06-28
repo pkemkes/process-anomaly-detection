@@ -25,19 +25,24 @@ def test_categorical_values_are_normalized_and_paired():
     assert cats["image_name"] == "cmd.exe"
     assert cats["parent_image_name"] == "explorer.exe"
     assert cats["pair_parent_image"] == "explorer.exe\x1fcmd.exe"
-    assert set(cats) == set(featurize.CATEGORICAL_FIELDS)
+    # Feature fields and conditioning context fields are all present.
+    assert set(featurize.CATEGORICAL_FIELDS) <= set(cats)
+    assert set(featurize.CONTEXT_FIELDS) <= set(cats)
 
 
 def test_boolean_flags_tri_state_encoding():
-    flags = featurize.boolean_flags(make_record(is_signed=True, is_elevated=None))
+    flags = featurize.boolean_flags(make_record(is_signed=True, signer_is_microsoft=None))
     assert flags["is_signed"] == 1.0
-    assert flags["is_elevated"] == 0.5
+    assert flags["signer_is_microsoft"] == 0.5
     assert set(flags) == set(featurize.BOOLEAN_FLAGS)
 
 
-def test_ran_from_temp_flag():
-    assert featurize.boolean_flags(make_record(path_bucket="Temp"))["ran_from_temp"] == 1.0
-    assert featurize.boolean_flags(make_record(path_bucket="System32"))["ran_from_temp"] == 0.0
+def test_elevation_is_conditioned_on_image():
+    # Elevation is modelled as an image-conditioned pair, not a standalone flag.
+    assert "is_elevated" not in featurize.BOOLEAN_FLAGS
+    cats = featurize.categorical_values(make_record(image_name="python.exe", is_elevated=True))
+    assert cats["pair_image_elevated"] == "python.exe\x1ftrue"
+    assert cats["pair_image_integrity"] == "python.exe\x1fmedium"
 
 
 def test_shannon_entropy_bounds():
@@ -69,3 +74,49 @@ def test_feature_row_matches_column_set():
     vocab.observe_row(featurize.categorical_values(make_record()))
     row = featurize.feature_row(make_record(), vocab)
     assert set(row) == set(featurize.FEATURE_COLUMNS)
+
+
+def test_window_id_prefers_create_time_and_falls_back_to_timestamp():
+    rec = make_record(
+        create_time="2026-06-14T10:00:00.000Z",
+        timestamp="2026-06-14T09:00:00.000Z",
+    )
+    # create_time (10:00) drives the window, not timestamp (09:00).
+    expected = featurize.window_id(make_record(create_time="2026-06-14T10:30:00.000Z"), 60)
+    assert featurize.window_id(rec, 60) == expected
+
+    # An epoch-zero create_time is rejected; timestamp is used instead.
+    backfill = make_record(
+        create_time="1970-01-01T00:00:00.000Z",
+        timestamp="2026-06-14T09:00:00.000Z",
+    )
+    via_ts = featurize.window_id(make_record(create_time="2026-06-14T09:00:00.000Z"), 60)
+    assert featurize.window_id(backfill, 60) == via_ts
+
+
+def test_window_id_none_without_timestamp():
+    rec = make_record(create_time=None, timestamp=None)
+    assert featurize.window_id(rec, 60) is None
+
+
+def test_hour_and_dow_bucketing():
+    # 2026-06-01 is a Monday; 10:00 UTC -> hour bucket 10*8//24 = 3.
+    rec = make_record(create_time="2026-06-01T10:00:00.000Z")
+    assert featurize.hour_bucket(rec, 8) == "3"
+    assert featurize.dow_bucket(rec, 2) == "0"  # Monday is a weekday
+    # 2026-06-06 is a Saturday -> weekend bucket.
+    weekend = make_record(create_time="2026-06-06T10:00:00.000Z")
+    assert featurize.dow_bucket(weekend, 2) == "1"
+
+
+def test_temporal_feature_columns_are_in_feature_columns():
+    from model.vocab import Vocabulary
+
+    vocab = Vocabulary()
+    temporal = featurize.temporal_features(make_record(), vocab)
+    assert set(temporal) == {
+        featurize.FREQ_PREFIX + f for f in featurize.TEMPORAL_FIELDS
+    }
+    assert set(temporal) <= set(featurize.FEATURE_COLUMNS)
+    # Thin/empty vocab -> temporal head is silent.
+    assert featurize.head_c_nll(temporal) == 0.0
