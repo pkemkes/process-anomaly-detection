@@ -3,10 +3,10 @@ name = "process-monitor"
 version = "0.1.0"
 description = "Live full-screen terminal monitor that ranks scored process starts by anomaly score."
 requires-python = ">=3.9"
-# Pure standard library (ANSI escape sequences + ctypes on Windows): no
-# third-party runtime dependencies, matching the lightweight ethos of the
-# sibling subprojects.
-dependencies = []
+# Rich draws the full-screen, non-scrolling table (alternate screen, colours,
+# elastic columns and flicker-free repaint); the small console-input helper in
+# ``terminal.py`` remains standard-library only.
+dependencies = ["rich>=13"]
 
 [project.scripts]
 process-monitor = "process_monitor.__main__:main"

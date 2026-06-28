@@ -3,21 +3,24 @@
 A background reader thread consumes stdin line-by-line (so freshly scored
 processes appear with minimal latency even though stdin is a pipe) and folds
 each record into a shared :class:`ProcessStore`. The main thread owns the
-terminal and repaints the ranked table at a fixed interval until interrupted.
+terminal -- via Rich's :class:`~rich.live.Live` in alternate-screen mode -- and
+repaints the ranked table at a fixed interval until interrupted.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 import threading
 import time
 from typing import TextIO
 
+from rich.console import Console
+from rich.live import Live
+
 from .render import render_frame
 from .store import ProcessStore, SORT_SCORE, SORT_TIME
-from .terminal import KeyReader, Screen
+from .terminal import KeyReader
 
 
 def _reconfigure_utf8(stream: TextIO) -> None:
@@ -71,8 +74,11 @@ def run(refresh: float = 0.5) -> int:
     reader.start()
     started = time.monotonic()
 
+    console = Console()
     try:
-        with Screen() as screen, KeyReader() as keys:
+        with Live(
+            console=console, screen=True, auto_refresh=False, transient=False
+        ) as live, KeyReader() as keys:
             while True:
                 for ch in keys.poll():
                     lower = ch.lower()
@@ -82,17 +88,18 @@ def run(refresh: float = 0.5) -> int:
                         store.set_sort(SORT_TIME)
                     elif lower in (" ", "\t"):
                         store.toggle_sort()
-                size = shutil.get_terminal_size((80, 24))
+                size = console.size
                 with lock:
                     snapshot = store.snapshot()
                     counts = store.counts()
                     sort_mode = store.sort_mode
                 frame = render_frame(
-                    snapshot, counts, size.columns, size.lines, reader.eof, started,
+                    snapshot, counts, size.width, size.height, reader.eof, started,
                     sort_mode,
                 )
-                screen.render(frame)
+                live.update(frame, refresh=True)
                 time.sleep(refresh)
     except KeyboardInterrupt:
         return 0
     return 0
+

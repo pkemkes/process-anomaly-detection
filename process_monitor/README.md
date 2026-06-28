@@ -5,9 +5,9 @@ the **scored** NDJSON produced by `model score`, takes over the terminal, and
 shows a continuously refreshing, **non-scrolling** table of processes ranked by
 anomaly score -- most suspicious at the top.
 
-It is a self-contained subproject with **no third-party dependencies**: the
-display is drawn with raw ANSI/VT escape sequences (virtual-terminal mode is
-enabled automatically on the Windows console).
+The display is rendered with [Rich](https://github.com/Textualize/rich), which
+owns the alternate screen, colours, elastic columns and flicker-free repaint
+(virtual-terminal mode is enabled automatically on the Windows console).
 
 ## Usage
 
@@ -51,8 +51,8 @@ Press `Ctrl+C` to quit; your terminal scrollback is restored on exit.
 process_monitor/
     process_monitor/
         __main__.py   # CLI entry point (python -m process_monitor)
-        monitor.py    # run-loop: stdin reader thread + timed repaint
+        monitor.py    # run-loop: stdin reader thread + Rich Live repaint
         store.py      # live, ranked table of scored processes
-        render.py     # pure frame formatter (colours / columns)
-        terminal.py   # VT enablement + alternate-screen control
+        render.py     # pure frame formatter -> Rich renderable
+        terminal.py   # non-blocking console hotkey reader
 ```
